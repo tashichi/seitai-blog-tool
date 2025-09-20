@@ -1,0 +1,12 @@
+{
+  "name": "seitai-blog-tool",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Substack to WordPress blog automation tool for 印西市整体院",
+  "main": "main.js",
+  "dependencies": {
+    "rss-parser": "^3.13.0",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
