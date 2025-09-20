@@ -3,8 +3,49 @@ import Parser from 'rss-parser';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
-// 印西市整体院 SEO対策ツール
-console.log('整体院ブログ自動化ツール開始');
+// 投稿履歴管理
+import fs from 'fs';
+
+const POSTED_ARTICLES_FILE = 'posted_articles.json';
+
+// 投稿済み記事リストの読み込み
+function loadPostedArticles() {
+    try {
+        if (fs.existsSync(POSTED_ARTICLES_FILE)) {
+            const data = fs.readFileSync(POSTED_ARTICLES_FILE, 'utf8');
+            return JSON.parse(data);
+        }
+        return [];
+    } catch (error) {
+        console.error('投稿履歴読み込みエラー:', error.message);
+        return [];
+    }
+}
+
+// 投稿済み記事リストの保存
+function savePostedArticles(postedList) {
+    try {
+        fs.writeFileSync(POSTED_ARTICLES_FILE, JSON.stringify(postedList, null, 2));
+        console.log('投稿履歴保存完了');
+    } catch (error) {
+        console.error('投稿履歴保存エラー:', error.message);
+    }
+}
+
+// 未投稿記事のフィルタリング
+function filterUnpostedArticles(articles) {
+    const postedArticles = loadPostedArticles();
+    const unposted = articles.filter(article => 
+        !postedArticles.some(posted => posted.url === article.url)
+    );
+    
+    console.log(`\n=== 投稿状況確認 ===`);
+    console.log(`全記事数: ${articles.length}`);
+    console.log(`投稿済み: ${articles.length - unposted.length}`);
+    console.log(`未投稿: ${unposted.length}`);
+    
+    return unposted;
+}
 
 const CONFIG = {
     substackRSS: 'https://tanizawaseitai.substack.com/feed',
@@ -250,15 +291,26 @@ async function postToWordPress(title, content) {
     }
 }
 
-// バッチ処理関数（複数記事の一括処理）
-async function processBatch(articles, startIndex = 0, batchSize = 3) {
-    console.log(`\n=== バッチ処理開始 (${startIndex + 1}〜${Math.min(startIndex + batchSize, articles.length)}件目) ===`);
+// バッチ処理関数（投稿履歴管理付き）
+async function processBatch(articles, startIndex = 0, batchSize = 10) {
+    const postedArticles = loadPostedArticles();
+    
+    console.log(`\n=== バッチ処理開始 (最大${batchSize}件処理) ===`);
 
     const results = [];
+    let processed = 0;
 
-    for (let i = startIndex; i < Math.min(startIndex + batchSize, articles.length); i++) {
+    for (let i = startIndex; i < articles.length && processed < batchSize; i++) {
         const article = articles[i];
-        console.log(`\n[${i + 1}/${articles.length}] 処理中: ${article.title}`);
+        
+        // 投稿済みチェック
+        const isAlreadyPosted = postedArticles.some(posted => posted.url === article.url);
+        if (isAlreadyPosted) {
+            console.log(`[スキップ] 投稿済み: ${article.title}`);
+            continue;
+        }
+
+        console.log(`\n[${processed + 1}/${batchSize}] 処理中: ${article.title}`);
 
         // Claude要約
         const summary = await summarizeWithClaude(article);
@@ -276,17 +328,25 @@ async function processBatch(articles, startIndex = 0, batchSize = 3) {
             // WordPress投稿
             const postResult = await postToWordPress(summarizedTitle, summarizedContent);
 
+            if (postResult.success) {
+                // 投稿成功時は履歴に追加
+                postedArticles.push({
+                    url: article.url,
+                    title: article.title,
+                    wordpressId: postResult.postId,
+                    postedAt: new Date().toISOString()
+                });
+                savePostedArticles(postedArticles);
+                console.log(`✓ WordPress投稿成功: ${postResult.editUrl}`);
+            } else {
+                console.log(`✗ WordPress投稿失敗: ${postResult.error}`);
+            }
+
             results.push({
                 original: article,
                 summary: summary,
                 postResult: postResult
             });
-
-            if (postResult.success) {
-                console.log(`✓ WordPress投稿成功: ${postResult.editUrl}`);
-            } else {
-                console.log(`✗ WordPress投稿失敗: ${postResult.error}`);
-            }
         } else {
             console.log('✗ Claude要約失敗');
             results.push({
@@ -296,6 +356,8 @@ async function processBatch(articles, startIndex = 0, batchSize = 3) {
             });
         }
 
+        processed++;
+        
         // APIレート制限対策
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
@@ -331,31 +393,49 @@ function generateReport(results) {
     }
 }
 
-// メイン実行関数（修正版）
+// メイン実行関数（RSS自動取得版）
 async function main() {
-    const manualUrls = await testManualUrls();
+    // RSS自動取得に切り替え
+    console.log('\n=== RSS自動取得モード ===');
+    const rssArticles = await fetchSubstackFeed();
 
-    console.log(`目標達成: ${manualUrls.length}/56記事のURL収集完了`);
+    if (rssArticles.length === 0) {
+        console.log('RSS記事が取得できませんでした。');
+        return;
+    }
 
-    if (manualUrls.length >= 50) {
-        console.log('\n次のステップ: 全記事自動分類実行');
+    console.log(`RSS取得完了: ${rssArticles.length}記事`);
 
-        // 全記事を分類処理（57記事すべて）
-        const { articles, notices } = await filterArticles(manualUrls, manualUrls.length);
+    // RSS記事を内部形式に変換
+    const articles = rssArticles.map(item => ({
+        title: item.title,
+        content: item.contentSnippet || item.content || '',
+        url: item.link
+    }));
 
-        console.log(`\n=== 最終分類結果 ===`);
-        console.log(`健康記事: ${articles.length}件`);
-        console.log(`お知らせ: ${notices.length}件`);
+    // お知らせ記事を除外
+    const healthArticles = articles.filter(article => {
+        const classification = classifyArticle(article.title, article.content);
+        return classification.isArticle;
+    });
 
-        if (articles.length > 0) {
-            console.log('\n=== 健康記事一覧（最初の10件）===');
-            articles.slice(0, 10).forEach((article, index) => {
-                console.log(`${index + 1}. ${article.title}`);
-            });
+    console.log(`\n=== 分類結果 ===`);
+    console.log(`健康記事: ${healthArticles.length}件`);
+    console.log(`お知らせ除外: ${articles.length - healthArticles.length}件`);
 
-            // バッチ処理実行（最初の3記事でテスト）
-            console.log('\n=== バッチ処理実行（テスト：3記事） ===');
-            const results = await processBatch(articles, 0, 3);
+    if (healthArticles.length > 0) {
+        console.log('\n=== 健康記事一覧 ===');
+        healthArticles.forEach((article, index) => {
+            console.log(`${index + 1}. ${article.title}`);
+        });
+
+        // 未投稿記事のフィルタリング
+        console.log('\n=== 未投稿記事チェック ===');
+        const unpostedArticles = filterUnpostedArticles(healthArticles);
+        
+        if (unpostedArticles.length > 0) {
+            console.log(`新規記事 ${unpostedArticles.length}件を処理します`);
+            const results = await processBatch(unpostedArticles, 0, 10);
             
             // 処理結果レポート
             generateReport(results);
@@ -363,9 +443,14 @@ async function main() {
             console.log('\n=== 次のアクション提案 ===');
             console.log('1. 投稿された下書きをWordPress管理画面で確認');
             console.log('2. 内容に問題なければ「公開」に変更');
-            console.log('3. 残りの記事のバッチ処理実行');
-            console.log(`4. 全${articles.length}記事の処理で検索順位回復を目指す`);
+            if (unpostedArticles.length > 10) {
+                console.log('3. 残りの記事処理のため再実行');
+            }
+        } else {
+            console.log('新規記事はありません。すべて投稿済みです。');
         }
+    } else {
+        console.log('処理対象の健康記事がありません。');
     }
 }
 
