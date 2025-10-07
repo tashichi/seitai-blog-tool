@@ -202,22 +202,28 @@ async function filterArticles(urls, maxArticles = 10) {
 // Claude API要約関数（修正版）
 async function summarizeWithClaude(article) {
     try {
-        const prompt = `以下のメルマガ記事を印西市の整体院のブログ用に要約してください。
+        const prompt = `以下のメルマガ記事を、印西市の整体院向けのブログ記事として要約してください。
 
-記事タイトル: ${article.title}
-記事内容: ${article.content.substring(0, 2000)}...
+【重要】記事末尾の以下の宣伝文は要約に含めないでください：
+- 「【趣味で作ったアプリのご紹介】」で始まる段落
+- 「ClipFlow Video」というアプリの紹介文
+- App Storeへのリンク
 
-要約の要件:
-- 印西市の地域性を自然に盛り込む（不自然なキーワード詰め込みは避ける）
-- 肩こり、腰痛、整体などの専門用語は文脈に合わせて自然に使用
+要約するのは健康・整体に関する本文のみとしてください。
+
+【要約ルール】
+- 印西市の地域性を自然に組み込む
+- 肩こり、腰痛、整体などの専門用語を自然に使用
+- 読みやすさ最優先、SEOは二次的考慮
 - 500文字程度で要約
-- 整体院の19年の実績を適切にアピール
-- 読者にとって価値のある健康情報として提供
-- 読みやすさを最優先にし、SEOは二次的に考慮
+- 整体院の19年実績を活かした内容に
 
 以下の形式で出力してください:
 タイトル: [自然で読みやすいタイトル]
-本文: [500文字程度の要約]`;
+本文: [500文字程度の要約]
+
+記事本文：
+${article.content}`;
 
         const response = await axios.post('https://api.anthropic.com/v1/messages', {
             model: 'claude-sonnet-4-20250514',
@@ -406,12 +412,24 @@ async function main() {
 
     console.log(`RSS取得完了: ${rssArticles.length}記事`);
 
-    // RSS記事を内部形式に変換
-    const articles = rssArticles.map(item => ({
-        title: item.title,
-        content: item.contentSnippet || item.content || '',
-        url: item.link
-    }));
+    // RSS記事のURLから本文を直接取得
+const articles = [];
+for (const item of rssArticles) {
+    console.log(`記事本文取得中: ${item.title}`);
+    const fullContent = await fetchArticleContent(item.link);
+    if (fullContent && fullContent.content) {
+        articles.push({
+            title: item.title,
+            content: fullContent.content,
+            url: item.link
+        });
+        console.log(`  本文取得成功: ${fullContent.content.length}文字`);
+    } else {
+        console.log(`  本文取得失敗`);
+    }
+    // レート制限対策
+    await new Promise(resolve => setTimeout(resolve, 1000));
+}
 
     // お知らせ記事を除外
     const healthArticles = articles.filter(article => {
