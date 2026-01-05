@@ -121,7 +121,8 @@ async function fetchArticleContent(url) {
 function classifyArticle(title, content) {
     const noticeKeywords = [
         'お知らせ', '休業', '営業時間', '臨時', '神獅子舞',
-        '年末年始', 'ゴールデンウィーク', '夏季休暇',
+        // '年末年始', // 健康記事と区別できないためコメントアウト
+        'ゴールデンウィーク', '夏季休暇',
         '定休日', '変更', '休診', '休館', '神社', '奉納'
     ];
 
@@ -172,27 +173,27 @@ function prepareForBlog(article) {
     // 2. Substack誘導文とCTA（末尾のみ）
     const footer = `
 
----
+<hr />
 
-### 📮 週2回、健康情報をお届けしています
+<h3>📮 週2回、健康情報をお届けしています</h3>
 
 <div style="text-align: center; margin: 20px 0;">
 <img src="https://tanizawaseitai.com/wp-content/uploads/2024/11/qr-code.png" alt="たにざわ整体通信 QRコード" width="200" height="200" />
 </div>
 
-**メルマガ登録はこちら**  
-📧 https://tanizawaseitai.substack.com
+<p><strong>メルマガ登録はこちら</strong><br>
+📧 <a href="https://tanizawaseitai.substack.com" target="_blank">https://tanizawaseitai.substack.com</a></p>
 
----
+<hr />
 
-### 🏥 印西市で整体をお探しなら
+<h3>🏥 印西市で整体をお探しなら</h3>
 
-**たにざわ整体**（2005年開業）  
-📞 0476-33-6243  
-🔗 [ご予約・お問い合わせ](https://tanizawaseitai.com/contact/)  
-⭐ Google評価 4.9 / 口コミ多数
+<p><strong>たにざわ整体</strong>（2005年開業）<br>
+📞 0476-33-6243<br>
+🔗 <a href="https://tanizawaseitai.com/contact/">ご予約・お問い合わせ</a><br>
+⭐ Google評価 4.9 / 口コミ多数</p>
 
-肩こり・腰痛・産後骨盤矯正など、お気軽にご相談ください。
+<p>肩こり・腰痛・産後骨盤矯正など、お気軽にご相談ください。</p>
 `;
 
     // 3. メルマガ本文 + 末尾CTAのみ（冒頭導入文なし）
